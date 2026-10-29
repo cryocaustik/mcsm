@@ -1,14 +1,18 @@
 import { pack, extract } from "tar-stream";
 import { unzipSync, type UnzipFileInfo } from "fflate";
+import type { ModOrigin } from "../../../shared/types/mods";
+import type { ModInstallMetadata } from "../mods/types";
+import { MOD_ORIGINS_DIR, modOriginFile, modOriginPath } from "../mods/origins";
+import type { ModOriginRecord } from "../mods/origins";
 
 /**
  * Mod/plugin jar management.
  *
  * Jars live in the server's /data/plugins (Paper) or /data/mods (mod loaders)
  * directory, which is backed by the named volume. The app talks to Docker (not
- * the filesystem), so we read the directory with `getArchive`, write new jars
- * with `putArchive`, and delete via a short-lived helper container that mounts
- * the same volume.
+ * the filesystem), so we list metadata in a read-only volume helper, read
+ * individual jars with `getArchive`, write with `putArchive`, and delete via
+ * a short-lived helper container that mounts the same volume.
  *
  * Uploads may be raw `.jar` files or `.zip` bundles; we only ever extract the
  * `.jar` entries out of a zip. Because zips are attacker-controllable, the
@@ -30,53 +34,90 @@ const MAX_RATIO = 200; // uncompressed:compressed
 /** Thrown for malformed or unsafe uploads; surfaced to the client as a 400. */
 export class JarUploadError extends Error {}
 
-export type JarInfo = { name: string; size: number };
+export type JarInfo = {
+  name: string;
+  size: number;
+  modifiedAt: string | null;
+  /** Nanosecond mtime/ctime and inode for internal signature-cache validation. */
+  revision?: string;
+};
 export type UploadedFile = { filename: string; data: Buffer };
-export type JarFile = { name: string; data: Uint8Array };
+export type JarFile = {
+  name: string;
+  data: Uint8Array;
+  metadata?: ModInstallMetadata;
+};
 
 /** Strip any directory components, leaving a bare file name. */
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-/**
- * List the `.jar` files in /data/<dir>. Works whether or not the container is
- * running (it reads the filesystem layer, not a live process). Returns an
- * empty list if the directory doesn't exist yet.
- */
-export async function listJars(id: string, dir: string): Promise<JarInfo[]> {
-  const { docker } = useDocker();
-  const container = docker.getContainer(id);
+const jarLists = new Map<string, { at: number; pending: Promise<JarInfo[]> }>();
 
-  let stream: NodeJS.ReadableStream;
-  try {
-    stream = await container.getArchive({ path: `/data/${dir}` });
-  } catch (error) {
-    // 404 = the directory hasn't been created yet.
-    if ((error as { statusCode?: number }).statusCode === 404) return [];
-    throw error;
-  }
+export function invalidateJarList(id: string, dir: string) {
+  jarLists.delete(`${id}:${dir}`);
+}
 
-  return new Promise<JarInfo[]>((resolve, reject) => {
-    const files: JarInfo[] = [];
-    const tar = extract();
-
-    tar.on("entry", (header, entry, next) => {
-      const name = basename(header.name);
-      if (header.type === "file" && name.toLowerCase().endsWith(".jar")) {
-        files.push({ name, size: header.size ?? 0 });
-      }
-      entry.on("end", next);
-      entry.resume(); // drain; we only need the headers
-    });
-
-    tar.on("finish", () =>
-      resolve(files.sort((a, b) => a.name.localeCompare(b.name)))
+/** Metadata only: never transfer every jar merely to list its filename. */
+export async function listJars(
+  id: string,
+  dir: string,
+  options: { fresh?: boolean } = {}
+): Promise<JarInfo[]> {
+  if (dir !== "mods" && dir !== "plugins")
+    throw new Error("Invalid jar directory");
+  const key = `${id}:${dir}`;
+  const cached = jarLists.get(key);
+  if (
+    cached &&
+    (!cached.at || (!options.fresh && Date.now() - cached.at < 1000))
+  )
+    return cached.pending;
+  const entry = { at: 0, pending: Promise.resolve([] as JarInfo[]) };
+  entry.pending = (async () => {
+    // NUL fields handle spaces, tabs and newlines in externally created names.
+    const end = "MCSM-JARS-END";
+    // The helper uses a TTY: base64 prevents filename quoting and terminal
+    // newline conversion from changing the metadata stream.
+    const encoded = await runInVolume(
+      id,
+      `{ if [ ! -e /data/${dir} ]; then printf '\\0${end}\\0'; else find /data/${dir} -mindepth 1 -maxdepth 1 -type f -iname '*.jar' -printf '%s\\0%T@\\0%C@\\0%i\\0%f\\0' && printf '\\0${end}\\0'; fi; } | base64 -w0`
     );
-    tar.on("error", reject);
-    stream.on("error", reject);
-    stream.pipe(tar);
+    const out = Buffer.from(encoded.trim(), "base64").toString("utf8");
+    if (!out.endsWith(`\0${end}\0`))
+      throw new Error("Failed to list installed jars");
+    const fields = out.slice(0, -`\0${end}\0`.length).split("\0");
+    const files: JarInfo[] = [];
+    for (let offset = 0; offset + 4 < fields.length; offset += 5) {
+      const [size, modified, changed, inode, name] = fields.slice(
+        offset,
+        offset + 5
+      ) as [string, string, string, string, string];
+      const date = new Date(Number(modified) * 1000);
+      if (
+        !/^\d+$/.test(size) ||
+        !Number.isFinite(date.getTime()) ||
+        !name ||
+        name.includes("/")
+      )
+        throw new Error("Invalid installed jar metadata");
+      files.push({
+        name,
+        size: Number(size),
+        modifiedAt: date.toISOString(),
+        revision: `${modified}:${changed}:${inode}`,
+      });
+    }
+    entry.at = Date.now();
+    return files.sort((a, b) => a.name.localeCompare(b.name));
+  })().catch((error) => {
+    if (jarLists.get(key) === entry) jarLists.delete(key);
+    throw error;
   });
+  if (jarLists.size >= 64) jarLists.delete(jarLists.keys().next().value!);
+  jarLists.set(key, entry);
+  return entry.pending;
 }
 
 /**
@@ -186,12 +227,15 @@ function extractZip(upload: UploadedFile): JarFile[] {
 /**
  * Write jars into /data/<dir> by streaming a tar into the container. The
  * directory entry ensures the path exists on a freshly created server that has
- * never started. Works on stopped containers too.
+ * never started. Works on stopped containers too. Source records are written
+ * alongside each jar in the same archive, so acquisition is explicit for every
+ * entry point (provider installs, updates and manual uploads).
  */
 export async function writeJars(
   id: string,
   dir: string,
-  jars: JarFile[]
+  jars: JarFile[],
+  source: Exclude<ModOrigin, "unknown">
 ): Promise<void> {
   const { docker } = useDocker();
   const container = docker.getContainer(id);
@@ -201,14 +245,58 @@ export async function writeJars(
 
   const tar = pack();
   tar.entry({ name: `${dir}/`, type: "directory", mode: 0o755, uid, gid });
+  tar.entry({
+    name: `${MOD_ORIGINS_DIR}/`,
+    type: "directory",
+    mode: 0o755,
+    uid,
+    gid,
+  });
   for (const jar of jars) {
     tar.entry(
       { name: `${dir}/${jar.name}`, mode: 0o644, uid, gid },
       Buffer.from(jar.data)
     );
+    const origin = modOriginFile(dir, jar, source);
+    tar.entry({ name: origin.name, mode: 0o644, uid, gid }, origin.data);
   }
   tar.finalize();
 
+  try {
+    await container.putArchive(tar as unknown as NodeJS.ReadableStream, {
+      path: "/data",
+    });
+  } finally {
+    invalidateJarList(id, dir);
+  }
+}
+
+/** Update dependency links for a retained file without changing its bytes/source. */
+export async function writeJarOrigin(
+  id: string,
+  record: ModOriginRecord
+): Promise<void> {
+  const { docker } = useDocker();
+  const container = docker.getContainer(id);
+  const { uid, gid } = await containerOwner(container);
+  const tar = pack();
+  tar.entry({
+    name: `${MOD_ORIGINS_DIR}/`,
+    type: "directory",
+    mode: 0o755,
+    uid,
+    gid,
+  });
+  tar.entry(
+    {
+      name: modOriginPath(record.directory, record.filename),
+      mode: 0o644,
+      uid,
+      gid,
+    },
+    Buffer.from(JSON.stringify(record))
+  );
+  tar.finalize();
   await container.putArchive(tar as unknown as NodeJS.ReadableStream, {
     path: "/data",
   });
@@ -221,7 +309,8 @@ export async function writeJars(
 export async function readJar(
   id: string,
   dir: string,
-  name: string
+  name: string,
+  options: { maxBytes?: number } = {}
 ): Promise<Buffer> {
   const { docker } = useDocker();
   const container = docker.getContainer(id);
@@ -246,7 +335,20 @@ export async function readJar(
         return next();
       }
       const chunks: Uint8Array[] = [];
-      entry.on("data", (chunk) => chunks.push(chunk as Uint8Array));
+      let size = 0;
+      const maxBytes = options.maxBytes ?? Infinity;
+      entry.on("data", (chunk) => {
+        const bytes = chunk as Uint8Array;
+        size += bytes.length;
+        if (size > maxBytes) {
+          tar.destroy(new Error("Jar exceeds the signature scan size limit"));
+          if ("destroy" in stream && typeof stream.destroy === "function")
+            stream.destroy();
+          else stream.resume();
+          return;
+        }
+        chunks.push(bytes);
+      });
       entry.on("end", () => {
         found = Buffer.concat(chunks);
         next();
@@ -317,7 +419,7 @@ export async function deleteJar(
   const helper = await docker.createContainer({
     Image: image,
     Entrypoint: ["/bin/rm"],
-    Cmd: ["-f", `/data/${dir}/${name}`],
+    Cmd: ["-f", `/data/${dir}/${name}`, `/data/${modOriginPath(dir, name)}`],
     HostConfig: {
       Binds: [`${server.volumeSource}:/data`],
       NetworkMode: "none",
@@ -329,6 +431,7 @@ export async function deleteJar(
     await helper.start();
     await helper.wait();
   } finally {
+    invalidateJarList(id, dir);
     await helper.remove({ force: true }).catch(() => {});
   }
 }

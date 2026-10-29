@@ -1,4 +1,6 @@
 import * as v from "valibot";
+import { modrinthUpdateMetadata } from "../../../../utils/mods/modrinth";
+import { readModOrigins } from "../../../../utils/mods/origins";
 
 /**
  * Update installed jars to their latest Modrinth builds: download the new
@@ -49,6 +51,7 @@ export default defineEventHandler(async (event) => {
   // Re-hash and re-check right before updating — the cached updates response
   // may be stale.
   const hashes = await jarHashes(id, dir);
+  const origins = await readModOrigins(id, dir);
   const targets = filenames.filter((filename: string) => hashes[filename]);
   if (!targets.length) {
     throw createError({
@@ -78,11 +81,16 @@ export default defineEventHandler(async (event) => {
     }
 
     try {
-      const jar = await downloadVersionJar(newest);
+      const jar: JarFile = await downloadVersionJar(newest);
+      jar.metadata = await modrinthUpdateMetadata(
+        newest,
+        origins[filename],
+        sha1
+      );
       // Write the new build first, then remove the old file — a failure
       // between the two leaves both versions (harmless duplicate) rather
       // than neither.
-      await writeJars(id, dir, [jar]);
+      await writeJars(id, dir, [jar], "modrinth");
       if (jar.name !== filename) {
         await deleteJar(id, dir, filename);
       }

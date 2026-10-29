@@ -36,10 +36,10 @@ export const SECRET_DEFS: SecretDef[] = [
     key: "CURSEFORGE_API_KEY",
     label: "CurseForge API Key",
     description:
-      "Lets CurseForge modpack servers download packs from the CurseForge API.",
+      "Enables CurseForge mod and plugin browsing, installation and identification, and CurseForge modpack downloads.",
     docsUrl: "https://console.curseforge.com/",
     envVar: "CF_API_KEY",
-    appliesTo: ["AUTO_CURSEFORGE"],
+    appliesTo: ["PAPER", "FABRIC", "FORGE", "AUTO_CURSEFORGE"],
   },
 ];
 

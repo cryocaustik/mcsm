@@ -34,6 +34,7 @@ export type ModrinthSearchHit = {
   downloads: number;
   categories: string[];
   server_side: "required" | "optional" | "unsupported";
+  project_type?: string;
 };
 
 export type ModrinthVersionFile = {
@@ -57,6 +58,8 @@ export type ModrinthVersion = {
   version_number: string;
   files: ModrinthVersionFile[];
   dependencies: ModrinthDependency[];
+  loaders?: string[];
+  game_versions?: string[];
 };
 
 export type ModrinthProject = {
@@ -64,6 +67,7 @@ export type ModrinthProject = {
   slug: string;
   title: string;
   icon_url: string | null;
+  project_type?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -182,6 +186,7 @@ export async function searchProjects(opts: {
   gameVersion: string;
   offset?: number;
   limit?: number;
+  sort?: "relevance" | "downloads" | "updated" | "newest";
 }): Promise<{ hits: ModrinthSearchHit[]; total: number }> {
   // Facets: outer arrays are AND-ed, inner entries OR-ed. server_side filter
   // keeps client-only mods (shaders, minimaps) out of a *server* manager.
@@ -200,7 +205,7 @@ export async function searchProjects(opts: {
       facets,
       limit: String(opts.limit ?? 20),
       offset: String(opts.offset ?? 0),
-      index: "relevance",
+      index: opts.sort ?? "relevance",
     },
   });
 
@@ -229,6 +234,24 @@ export async function getProject(idOrSlug: string): Promise<ModrinthProject> {
   return modrinthFetch<ModrinthProject>(
     `/project/${encodeURIComponent(idOrSlug)}`
   );
+}
+
+export async function getModrinthProjects(
+  ids: string[]
+): Promise<ModrinthProject[]> {
+  const projects: ModrinthProject[] = [];
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    projects.push(
+      ...(await modrinthFetch<ModrinthProject[]>("/projects", {
+        query: { ids: JSON.stringify(ids.slice(offset, offset + 100)) },
+      }))
+    );
+  }
+  return projects;
+}
+
+export function getModrinthVersion(id: string): Promise<ModrinthVersion> {
+  return modrinthFetch<ModrinthVersion>(`/version/${encodeURIComponent(id)}`);
 }
 
 /**

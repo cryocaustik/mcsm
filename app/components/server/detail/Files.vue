@@ -32,8 +32,8 @@
             <div>
               <h3 class="font-semibold">{{ kindLabel }}</h3>
               <p class="text-sm text-muted">
-                Upload custom .jar files — they're loaded the next time the
-                server starts.
+                Manage installed files or download compatible builds from
+                Modrinth and CurseForge.
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
@@ -58,20 +58,42 @@
               >
                 Update all ({{ updatableJars.length }})
               </UButton>
-              <UInput
-                v-model="jarSearch"
-                icon="i-heroicons-magnifying-glass-20-solid"
-                placeholder="Search..."
+              <UButton
+                icon="i-heroicons-arrow-path-20-solid"
+                variant="ghost"
+                color="neutral"
                 size="sm"
-                class="w-40"
-              />
+                :loading="inventoryStatus === 'pending'"
+                @click="forceRefreshModData"
+                >Refresh</UButton
+              >
+              <UButton
+                icon="i-heroicons-arrow-up-tray-20-solid"
+                variant="outline"
+                color="neutral"
+                size="sm"
+                @click="showUpload = !showUpload"
+                >Upload files</UButton
+              >
+              <UDropdownMenu :items="modListActions">
+                <UButton
+                  icon="i-heroicons-document-text-20-solid"
+                  variant="outline"
+                  color="neutral"
+                  size="sm"
+                  :disabled="
+                    inventoryStatus === 'pending' || Boolean(inventoryError)
+                  "
+                  >Mod list</UButton
+                >
+              </UDropdownMenu>
               <UButton
                 icon="i-heroicons-globe-alt-20-solid"
                 variant="soft"
                 size="sm"
-                @click="modrinthOpen = true"
+                @click="browserOpen = true"
               >
-                Browse Modrinth
+                Download {{ kindLabel.toLowerCase() }}
               </UButton>
               <div class="flex items-center gap-2">
                 <USwitch v-model="restartAfter" size="sm" />
@@ -86,6 +108,7 @@
         <div class="space-y-5">
           <!-- Upload drop zone -->
           <UFileUpload
+            v-if="showUpload"
             v-model="uploadFiles"
             accept=".jar,.zip"
             multiple
@@ -114,95 +137,47 @@
             </template>
           </UFileUpload>
 
-          <!-- Jar list -->
-          <div v-if="filteredJars.length">
-            <div
-              class="flex items-center gap-4 px-4 py-3 mb-2 text-xs font-medium text-muted uppercase tracking-wider border-b border-default"
-            >
-              <UCheckbox
-                :model-value="allJarsSelected"
-                :indeterminate="selectedJars.length > 0 && !allJarsSelected"
-                aria-label="Select all"
-                @update:model-value="toggleSelectAll"
-              />
-              <div class="w-5" />
-              <div class="flex-1 min-w-0">Filename</div>
-              <div class="w-24 text-right">Size</div>
-              <div class="w-16 text-right">Actions</div>
-            </div>
-
-            <div class="flex flex-col gap-2">
-              <div
-                v-for="jar in filteredJars"
-                :key="jar.name"
-                class="flex items-center gap-4 rounded-lg ring-2 ring-transparent hover:ring-primary/50 cursor-pointer transition-all duration-150 px-4 py-2 bg-elevated/50"
-                @click="toggleJarSelection(jar.name)"
-              >
-                <UCheckbox
-                  :model-value="selectedJars.includes(jar.name)"
-                  :aria-label="`Select ${jar.name}`"
-                  @update:model-value="toggleJarSelection(jar.name)"
-                  @click.stop
-                />
-                <UIcon
-                  name="i-heroicons-puzzle-piece-20-solid"
-                  class="size-5 text-muted shrink-0"
-                />
-                <div class="flex-1 min-w-0 flex items-center gap-2">
-                  <p class="text-sm font-medium font-mono truncate">
-                    {{ jar.name }}
-                  </p>
-                  <UBadge
-                    v-if="updateFor(jar.name)"
-                    color="warning"
-                    variant="soft"
-                    size="sm"
-                    class="shrink-0"
-                  >
-                    Update: {{ updateFor(jar.name)!.latestVersion }}
-                  </UBadge>
-                  <UBadge
-                    v-else-if="projectInfoFor(jar.name)?.managed"
-                    color="neutral"
-                    variant="soft"
-                    size="sm"
-                    class="shrink-0"
-                  >
-                    auto-install
-                  </UBadge>
-                </div>
-                <div class="w-24 text-right text-sm text-muted">
-                  {{ formatSize(jar.size) }}
-                </div>
-                <div class="w-16 flex justify-end">
-                  <UDropdownMenu
-                    :items="jarMenuItems(jar)"
-                    :ui="{ content: 'w-48' }"
-                  >
-                    <UButton
-                      icon="i-heroicons-ellipsis-vertical-20-solid"
-                      size="xs"
-                      variant="ghost"
-                      color="neutral"
-                      aria-label="Jar actions"
-                      @click.stop
-                    />
-                  </UDropdownMenu>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-else-if="jarsStatus !== 'pending'"
-            class="text-sm text-muted py-8 text-center"
+          <UAlert
+            v-if="jarsError"
+            color="error"
+            variant="soft"
+            title="Could not load installed files"
+            :description="errorMessage(jarsError, 'Try refreshing the list.')"
+          />
+          <UAlert
+            v-if="inventoryError"
+            color="warning"
+            variant="soft"
+            description="Could not identify installed mods. Local files remain available; refresh to retry."
+          />
+          <UAlert
+            v-for="warning in inventory?.warnings ?? []"
+            :key="warning"
+            color="warning"
+            variant="soft"
+            :description="warning"
+          />
+          <p
+            v-if="inventoryStatus === 'pending'"
+            class="text-xs text-muted"
+            role="status"
           >
-            {{
-              jarSearch
-                ? "No matches."
-                : `No ${kindLabel.toLowerCase()} installed yet.`
-            }}
-          </div>
+            Identifying installed files on Modrinth and CurseForge…
+          </p>
+          <p
+            v-if="jarsStatus === 'pending' && !jars.length"
+            class="py-8 text-center text-muted"
+            role="status"
+          >
+            Loading installed files…
+          </p>
+          <ServerDetailInstalledModsTable
+            v-else
+            v-model:selected="selectedJars"
+            :mods="installedMods"
+            :updates="updatesByFilename"
+            :menu-items="modMenuItems"
+          />
 
           <!-- Integration jars hint -->
           <UAlert
@@ -268,22 +243,35 @@
       </template>
     </UModal>
 
-    <!-- Modrinth browser -->
-    <ServerDetailModrinthBrowser
-      v-model:open="modrinthOpen"
-      :installed-project-ids="installedProjectIds"
+    <!-- Download browser -->
+    <ServerDetailModListTransfer
+      v-model:open="modListOpen"
+      v-model:restart="restartAfter"
+      :mode="modListMode"
+      :mods="installedMods"
+      :selected="selectedJars"
+      :providers="inventory?.providers ?? []"
+      @installed="refreshModData"
+    />
+    <ServerDetailModBrowser
+      v-model:open="browserOpen"
+      :installed-project-keys="installedProjectKeys"
+      :providers="inventory?.providers ?? []"
+      :inventory-pending="inventoryStatus === 'pending'"
       :restart="restartAfter"
       :kind-label="kindLabel"
-      @installed="onModrinthInstalled"
+      @installed="refreshModData"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
+import type { InstalledMod, ModInventory } from "#shared/types/mods";
+import { installedModKeys } from "#shared/utils/mods";
 import { errorMessage } from "~/utils/errors";
 
-type JarInfo = { name: string; size: number };
+type JarInfo = { name: string; size: number; modifiedAt?: string | null };
 
 const { id, server, refresh: refreshServer } = useServerDetail();
 const toast = useToast();
@@ -308,44 +296,76 @@ const integrationHint = computed(() => {
 
 // --- Data -----------------------------------------------------------------------
 
+const forceModRefresh = ref(false);
+
 const {
   data: jars,
   refresh: refreshJars,
   status: jarsStatus,
+  error: jarsError,
 } = useFetch<JarInfo[]>(() => `/api/server/${id.value}/jars`, {
   default: () => [],
   retry: false,
   immediate: true,
+  watch: false,
 });
 
-const jarSearch = ref("");
-
-const filteredJars = computed(() =>
-  (jars.value ?? []).filter((jar) =>
-    jar.name.toLowerCase().includes(jarSearch.value.toLowerCase())
-  )
+const {
+  data: inventory,
+  refresh: refreshInventory,
+  status: inventoryStatus,
+  error: inventoryError,
+} = useFetch<ModInventory>(() => `/api/server/${id.value}/mods`, {
+  key: computed(() => `server-mod-inventory:${id.value}`),
+  query: { refresh: computed(() => String(forceModRefresh.value)) },
+  watch: false,
+  lazy: true,
+  retry: false,
+  default: () => ({ mods: [], warnings: [], providers: [] }),
+});
+const installedMods = computed<InstalledMod[]>(() => {
+  const identified = new Map(
+    (inventory.value?.mods ?? []).map((mod) => [mod.filename, mod])
+  );
+  return (jars.value ?? []).map((jar) => {
+    const mod = identified.get(jar.name);
+    return {
+      filename: jar.name,
+      size: jar.size,
+      modifiedAt: jar.modifiedAt ?? null,
+      source: mod?.source ?? "unknown",
+      dependency: mod?.dependency ?? false,
+      requiredBy: mod?.requiredBy ?? [],
+      identities: mod?.identities ?? [],
+      managed: Boolean(mod?.managed || projectInfoFor(jar.name)?.managed),
+    };
+  });
+});
+const installedProjectKeys = computed(() =>
+  installedModKeys(installedMods.value)
 );
-// --- Selection -------------------------------------------------------------------
-
 const selectedJars = ref<string[]>([]);
-
-const allJarsSelected = computed(
-  () =>
-    filteredJars.value.length > 0 &&
-    selectedJars.value.length === filteredJars.value.length
-);
-
-function toggleJarSelection(name: string) {
-  selectedJars.value = selectedJars.value.includes(name)
-    ? selectedJars.value.filter((selected) => selected !== name)
-    : [...selectedJars.value, name];
-}
-
-function toggleSelectAll() {
-  selectedJars.value = allJarsSelected.value
-    ? []
-    : filteredJars.value.map((jar) => jar.name);
-}
+const modListOpen = ref(false);
+const modListMode = ref<"export" | "import">("export");
+const modListActions: DropdownMenuItem[] = [
+  {
+    label: "Export mod list",
+    icon: "i-heroicons-document-arrow-down-20-solid",
+    onSelect: () => {
+      modListMode.value = "export";
+      modListOpen.value = true;
+    },
+  },
+  {
+    label: "Import mod list",
+    icon: "i-heroicons-document-arrow-up-20-solid",
+    onSelect: () => {
+      modListMode.value = "import";
+      modListOpen.value = true;
+    },
+  },
+];
+const showUpload = ref(false);
 
 // --- Upload ----------------------------------------------------------------------
 
@@ -377,7 +397,7 @@ async function upload() {
       color: "success",
     });
     uploadFiles.value = [];
-    await refreshJars();
+    await refreshModData();
     if (result.restarted) await refreshServer();
   } catch (error) {
     toast.add({
@@ -390,7 +410,7 @@ async function upload() {
   }
 }
 
-// --- Modrinth (browse / updates) ---------------------------------------------------
+// --- Modrinth updates -------------------------------------------------------------
 
 type JarUpdate = {
   filename: string;
@@ -400,16 +420,19 @@ type JarUpdate = {
   managed: boolean;
 };
 
-const modrinthOpen = ref(false);
+const browserOpen = ref(false);
 const updating = ref(false);
 
-// Hash-based update check — cached server-side, so this is cheap to refetch.
+// Share cached hashes with inventory; file changes invalidate only affected jars.
 const { data: modrinthInfo, refresh: refreshUpdates } = useFetch<{
   projects: Record<string, { projectId: string; managed: boolean }>;
   updates: JarUpdate[];
 }>(() => `/api/server/${id.value}/modrinth/updates`, {
+  key: computed(() => `server-mod-updates:${id.value}`),
   retry: false,
   immediate: true,
+  query: { refresh: computed(() => String(forceModRefresh.value)) },
+  watch: false,
   // Update info is a nice-to-have; never block the tab on Modrinth being slow.
   lazy: true,
   default: () => ({ projects: {}, updates: [] }),
@@ -430,14 +453,13 @@ const updatableJars = computed(() =>
   (modrinthInfo.value?.updates ?? []).filter((update) => !update.managed)
 );
 
-/** Project ids already present on the server — powers "Installed" in the browser. */
-const installedProjectIds = computed(
-  () =>
-    new Set(
-      Object.values(modrinthInfo.value?.projects ?? {}).map(
-        (project) => project.projectId
-      )
-    )
+const updatesByFilename = computed(() =>
+  Object.fromEntries(
+    (modrinthInfo.value?.updates ?? []).map((update) => [
+      update.filename,
+      update,
+    ])
+  )
 );
 
 async function runUpdate(filenames: string[]) {
@@ -470,8 +492,7 @@ async function runUpdate(filenames: string[]) {
       });
     }
 
-    await refreshJars();
-    await refreshUpdates({ dedupe: "cancel" });
+    await refreshModData();
     if (result.restarted) await refreshServer();
   } catch (error) {
     toast.add({
@@ -484,9 +505,21 @@ async function runUpdate(filenames: string[]) {
   }
 }
 
-async function onModrinthInstalled() {
-  await refreshJars();
-  await refreshUpdates({ dedupe: "cancel" });
+async function forceRefreshModData() {
+  forceModRefresh.value = true;
+  try {
+    await refreshModData();
+  } finally {
+    forceModRefresh.value = false;
+  }
+}
+
+async function refreshModData() {
+  await Promise.all([
+    refreshJars(),
+    refreshInventory({ dedupe: "cancel" }),
+    refreshUpdates({ dedupe: "cancel" }),
+  ]);
 }
 
 // --- Delete ----------------------------------------------------------------------
@@ -496,11 +529,19 @@ const batchDeleteOpen = ref(false);
 const deleting = ref(false);
 const pendingDelete = ref("");
 
+function modMenuItems(mod: InstalledMod) {
+  return jarMenuItems({ name: mod.filename, size: mod.size });
+}
+
 function jarMenuItems(jar: JarInfo): DropdownMenuItem[] {
   const items: DropdownMenuItem[] = [];
 
   const update = updateFor(jar.name);
-  if (update && !update.managed) {
+  if (
+    update &&
+    !update.managed &&
+    !installedMods.value.find((mod) => mod.filename === jar.name)?.managed
+  ) {
     items.push({
       label: `Update to ${update.latestVersion}`,
       icon: "i-heroicons-arrow-path-20-solid",
@@ -550,7 +591,7 @@ async function runDelete() {
     selectedJars.value = selectedJars.value.filter(
       (name) => name !== pendingDelete.value
     );
-    await refreshJars();
+    await refreshModData();
   } catch (error) {
     toast.add({
       title: "Delete failed",
@@ -579,27 +620,17 @@ async function runBatchDelete() {
     });
     batchDeleteOpen.value = false;
     selectedJars.value = [];
-    await refreshJars();
+    await refreshModData();
   } catch (error) {
     toast.add({
       title: "Delete failed",
       description: errorMessage(error, "Could not delete all jars."),
       color: "error",
     });
-    await refreshJars();
+    await refreshModData();
   } finally {
     deleting.value = false;
   }
-}
-
-// --- Display helpers ----------------------------------------------------------------
-
-function formatSize(bytes: number) {
-  if (!bytes) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(1)} KiB`;
-  return `${(kib / 1024).toFixed(2)} MiB`;
 }
 
 // --- Container identity changes (config edits recreate the container) ---------------
@@ -607,8 +638,7 @@ function formatSize(bytes: number) {
 watch(id, () => {
   selectedJars.value = [];
   uploadFiles.value = [];
-  modrinthOpen.value = false;
-  refreshJars();
-  refreshUpdates();
+  browserOpen.value = false;
+  refreshModData();
 });
 </script>
