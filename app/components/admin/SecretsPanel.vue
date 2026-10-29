@@ -83,7 +83,8 @@
 
     <template #footer>
       <p class="text-xs text-dimmed">
-        Changing a secret only affects new or recreated servers. Use
+        Mod browsing uses saved keys immediately. To update keys inside existing
+        server containers, use
         <span class="font-medium">Re-apply to all servers</span> below to push
         it to servers that already exist.
       </p>

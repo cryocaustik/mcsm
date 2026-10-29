@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await writeJars(id, dir, jars);
+    await writeJars(id, dir, jars, "manual");
   } catch (error) {
     console.error(error);
     throw createError({

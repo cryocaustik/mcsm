@@ -43,12 +43,12 @@ Properties → Review) for creating new servers.
   bundles) straight into a server's mods/plugins folder, and edit plugin/mod
   and server config files in a built-in Monaco editor — with server-side
   YAML/JSON validation so a typo can't take the server down.
-- **Modrinth browser & updates** — search [Modrinth](https://modrinth.com)
-  right from the dashboard, filtered to builds compatible with the server's
-  loader and Minecraft version, and install them (plus required dependencies)
-  in one click. Installed jars are identified by their SHA-1 hash, so anything
-  on Modrinth — even manually uploaded files — gets an "update available"
-  badge and one-click updates.
+- **Modrinth & CurseForge browser** — choose a source, search compatible builds
+  and install mods with required dependencies. CurseForge uses the API key in
+  Admin → Secrets. A sortable installed-mod table includes icons, versions,
+  modified dates, mod sources, verified provider links, search and filters.
+  Verified identities and file hashes prevent duplicate installs. Modrinth update badges and one-click
+  updates remain available, including for manually uploaded files.
 - **Direct Docker provisioning** — creates the container straight against the
   Docker Engine API (via [`dockerode`](https://github.com/apocas/dockerode)),
   with env vars, a memory limit, a persistent volume and Infrarust labels.
@@ -369,7 +369,7 @@ app/
       steps/             # Wizard steps: type, details, ServerProperties, Review
       detail/            # Server page tabs: Overview, Configuration, Environment,
                          #   Players, Console, Analytics, Backups, World, Map,
-                         #   Files, Settings (+ ActivityFeed, ModrinthBrowser,
+                         #   Files, Settings (+ ActivityFeed, ModBrowser,
                          #   PregenRadar)
       motd/              # MOTD editor, preview renderer, § code legend
     user/                # Player lookup list (operators / whitelist)
