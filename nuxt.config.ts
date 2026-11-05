@@ -197,6 +197,10 @@ export default defineNuxtConfig({
     },
 
     storage: {
+      modCache: {
+        driver: "fs",
+        base: "./.data/mod-cache",
+      },
       // Pre-SQLite storage. Still mounted so server/plugins/migrations.ts can
       // import legacy JSON data (secrets/settings/domains) into the database.
       objects: {

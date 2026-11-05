@@ -57,6 +57,16 @@ export async function modrinthUpdateMetadata(
   }
   return {
     project: { provider: "modrinth", projectId: version.project_id },
+    ...(validPrevious?.identity?.provider === "modrinth" &&
+    validPrevious.identity.projectId === version.project_id
+      ? {
+          identity: {
+            ...validPrevious.identity,
+            version: version.version_number,
+            versionId: version.id,
+          },
+        }
+      : {}),
     dependencies,
     dependency: validPrevious?.dependency === true,
   };
@@ -127,6 +137,9 @@ export const modrinthSource: ModSource = {
       return null;
     if (projectId && versionId && version.project_id !== projectId) return null;
     return versionInfo(version);
+  },
+  async getProjects(ids) {
+    return (await getModrinthProjects(ids)).map(projectInfo);
   },
   async identify(files) {
     if (!files.length) return {};

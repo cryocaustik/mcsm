@@ -323,3 +323,19 @@ export const oauthTokens = sqliteTable(
   },
   (table) => [index("oauth_tokens_grant_id_idx").on(table.grantId)]
 );
+
+/** Recovery information for the most recent container-managed modpack change. */
+export const modpackOperations = sqliteTable("modpack_operations", {
+  volume: text("volume").primaryKey(),
+  serverId: text("server_id").notNull(),
+  operation: text("operation", { mode: "json" })
+    .$type<
+      import("../../shared/types/modpacks").PackOperation & {
+        volumeSource?: string;
+      }
+    >()
+    .notNull(),
+  previousConfig: text("previous_config", { mode: "json" })
+    .$type<import("../schema/server.schema").ServerConfig>()
+    .notNull(),
+});

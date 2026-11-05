@@ -1,12 +1,12 @@
 <template>
-  <div class="space-y-3">
+  <div class="min-w-0 space-y-3">
     <div class="flex flex-wrap items-center gap-2">
       <UInput
         v-model="query"
         icon="i-heroicons-magnifying-glass-20-solid"
         placeholder="Search name, filename or version…"
         aria-label="Search installed files"
-        class="flex-1 min-w-56"
+        class="min-w-0 flex-1 basis-56"
       />
       <USelect
         v-model="source"
@@ -32,10 +32,19 @@
       {{ selected.length }} selected
     </p>
     <div class="overflow-x-auto rounded-lg border border-default">
-      <table class="w-full text-sm text-left">
+      <table class="w-full min-w-[44rem] table-fixed text-sm text-left">
+        <colgroup>
+          <col class="w-9" />
+          <col />
+          <col class="w-32" />
+          <col class="w-28" />
+          <col class="w-32" />
+          <col class="w-22" />
+          <col class="w-10" />
+        </colgroup>
         <thead class="bg-elevated/50 text-muted text-xs">
           <tr>
-            <th class="p-3 w-10">
+            <th class="px-2 py-3">
               <UCheckbox
                 :model-value="
                   allSelected ? true : someSelected ? 'indeterminate' : false
@@ -54,7 +63,7 @@
                     : 'ascending'
                   : 'none'
               "
-              class="p-3 whitespace-nowrap"
+              class="px-2 py-3 whitespace-nowrap"
             >
               <button
                 type="button"
@@ -73,7 +82,7 @@
                 />
               </button>
             </th>
-            <th class="p-3"><span class="sr-only">Actions</span></th>
+            <th class="px-2 py-3"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-default">
@@ -83,15 +92,15 @@
             class="hover:bg-elevated/40"
             :class="{ 'bg-primary/5': selected.includes(mod.filename) }"
           >
-            <td class="p-3">
+            <td class="px-2 py-3">
               <UCheckbox
                 :model-value="selected.includes(mod.filename)"
                 :aria-label="`Select ${mod.filename}`"
                 @update:model-value="toggle(mod.filename)"
               />
             </td>
-            <td class="p-3 min-w-64 max-w-md">
-              <div class="flex items-center gap-3">
+            <td class="px-2 py-3">
+              <div class="flex min-w-0 items-center gap-2">
                 <img
                   v-if="mod.displayIdentity?.iconUrl"
                   :src="mod.displayIdentity.iconUrl"
@@ -110,12 +119,14 @@
                     :href="mod.pageUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="font-medium text-highlighted hover:text-primary hover:underline"
+                    class="font-medium text-highlighted [overflow-wrap:anywhere] hover:text-primary hover:underline"
                     >{{ mod.displayIdentity?.name }}</a
                   >
-                  <span v-else class="font-medium text-highlighted break-all">{{
-                    mod.displayIdentity?.name ?? mod.filename
-                  }}</span>
+                  <span
+                    v-else
+                    class="font-medium text-highlighted [overflow-wrap:anywhere]"
+                    >{{ mod.displayIdentity?.name ?? mod.filename }}</span
+                  >
                   <p
                     v-if="mod.identities.length"
                     class="text-xs text-muted font-mono truncate"
@@ -182,32 +193,44 @@
                       </template>
                     </UTooltip>
                     <UBadge
-                      v-if="mod.managed"
+                      v-if="mod.packManaged"
+                      size="xs"
+                      color="neutral"
+                      variant="soft"
+                      >Modpack</UBadge
+                    >
+                    <UBadge
+                      v-else-if="mod.managed"
                       size="xs"
                       color="neutral"
                       variant="soft"
                       >Auto-install</UBadge
                     >
-                    <UBadge
+                    <UButton
                       v-else-if="updates[mod.filename]"
+                      icon="i-heroicons-arrow-path-20-solid"
                       size="xs"
                       color="warning"
                       variant="soft"
-                      >Update:
-                      {{ updates[mod.filename]!.latestVersion }}</UBadge
+                      :disabled="updating"
+                      :aria-label="`Update ${mod.displayIdentity?.name ?? mod.filename} to ${updates[mod.filename]!.latestVersion}`"
+                      class="min-w-0 max-w-full text-left whitespace-normal [overflow-wrap:anywhere]"
+                      @click="emit('update-mod', mod.filename)"
                     >
+                      Update: {{ updates[mod.filename]!.latestVersion }}
+                    </UButton>
                   </div>
                 </div>
               </div>
             </td>
-            <td class="p-3 max-w-48">
+            <td class="px-2 py-3">
               <span
-                class="line-clamp-2"
+                class="line-clamp-2 [overflow-wrap:anywhere]"
                 :title="mod.displayIdentity?.version"
                 >{{ mod.displayIdentity?.version ?? "Unknown" }}</span
               >
             </td>
-            <td class="p-3 whitespace-nowrap text-muted">
+            <td class="px-2 py-3 whitespace-nowrap text-muted">
               <time
                 v-if="mod.modifiedAt"
                 :datetime="mod.modifiedAt"
@@ -215,22 +238,36 @@
                 >{{ new Date(mod.modifiedAt).toLocaleDateString() }}</time
               ><span v-else>—</span>
             </td>
-            <td class="p-3 whitespace-nowrap">
+            <td class="px-2 py-3">
               <span
-                class="inline-flex items-center gap-1.5 text-xs"
-                :class="{ 'text-muted': mod.source === 'unknown' }"
+                class="inline-flex min-w-0 items-center gap-1.5 text-xs"
+                :class="{
+                  'text-muted': mod.source === 'unknown' && !mod.packManaged,
+                }"
                 :title="
-                  mod.source === 'unknown'
-                    ? 'No recorded installation source for this file.'
-                    : undefined
+                  mod.packManaged
+                    ? 'This file is managed by the modpack installer.'
+                    : mod.source === 'unknown'
+                      ? 'No recorded installation source for this file.'
+                      : undefined
                 "
               >
                 <img
                   v-if="
-                    mod.source === 'modrinth' || mod.source === 'curseforge'
+                    mod.packManaged ||
+                    mod.source === 'modrinth' ||
+                    mod.source === 'curseforge'
                   "
                   :src="
-                    mod.source === 'modrinth' ? modrinthIcon : curseforgeIcon
+                    mod.packManaged
+                      ? mod.packPlatform === 'ftb'
+                        ? ftbIcon
+                        : mod.packPlatform === 'modrinth'
+                          ? modrinthIcon
+                          : curseforgeIcon
+                      : mod.source === 'modrinth'
+                        ? modrinthIcon
+                        : curseforgeIcon
                   "
                   alt=""
                   class="size-3.5"
@@ -244,57 +281,35 @@
                   "
                   class="size-3.5"
                 />
-                {{ modSourceLabel(mod.source) }}
+                {{ installedModSourceLabel(mod) }}
               </span>
             </td>
-            <td class="p-3 whitespace-nowrap">
-              <div class="flex flex-col gap-1">
-                <a
-                  v-for="identity in mod.identities"
-                  :key="identity.provider"
-                  :href="identity.websiteUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex items-center gap-1 text-xs hover:text-primary hover:underline"
-                >
-                  <img
-                    :src="
-                      identity.provider === 'modrinth'
-                        ? modrinthIcon
-                        : curseforgeIcon
-                    "
-                    alt=""
-                    class="size-3.5"
-                  />
-                  {{
-                    identity.provider === "modrinth" ? "Modrinth" : "CurseForge"
-                  }}
-                  <UIcon
-                    name="i-heroicons-arrow-top-right-on-square-16-solid"
-                    class="size-3 text-muted"
-                  />
-                </a>
-                <span v-if="!mod.identities.length" class="text-xs text-muted"
-                  >Not identified</span
-                >
-              </div>
-            </td>
-            <td class="p-3 whitespace-nowrap text-muted">
+            <td class="px-2 py-3 whitespace-nowrap text-muted">
               {{ (mod.size / 1024 / 1024).toFixed(2) }} MiB
             </td>
-            <td class="p-3">
-              <UDropdownMenu :items="menuItems(mod)"
-                ><UButton
+            <td class="px-2 py-3">
+              <UDropdownMenu
+                :items="rowMenuItems(mod)"
+                :content="{ align: 'end' }"
+              >
+                <UButton
                   icon="i-heroicons-ellipsis-vertical-20-solid"
                   size="xs"
                   variant="ghost"
                   color="neutral"
                   :aria-label="`Actions for ${mod.filename}`"
-              /></UDropdownMenu>
+                />
+                <template #modrinth-leading>
+                  <img :src="modrinthIcon" alt="" class="size-4 shrink-0" />
+                </template>
+                <template #curseforge-leading>
+                  <img :src="curseforgeIcon" alt="" class="size-4 shrink-0" />
+                </template>
+              </UDropdownMenu>
             </td>
           </tr>
           <tr v-if="!visible.length">
-            <td colspan="8" class="p-10 text-center text-muted">
+            <td colspan="7" class="p-10 text-center text-muted">
               {{
                 mods.length
                   ? "No mods match these filters."
@@ -320,24 +335,29 @@ import {
   filterInstalledMods,
   installedModLinkIdentity,
   modSourceLabel,
+  installedModSourceLabel,
 } from "#shared/utils/mods";
 import modrinthIcon from "~/assets/modrinth.svg";
 import curseforgeIcon from "~/assets/curseforge.svg";
+import ftbIcon from "~/assets/ftb.svg";
 
 const props = defineProps<{
   mods: InstalledMod[];
   updates: Record<string, { latestVersion: string; managed: boolean }>;
   menuItems: (mod: InstalledMod) => DropdownMenuItem[];
+  updating?: boolean;
 }>();
+const emit = defineEmits<{ "update-mod": [filename: string] }>();
 const selected = defineModel<string[]>("selected", { required: true });
 const query = ref("");
-const source = ref<"all" | ModOrigin>("all");
+const source = ref<"all" | ModOrigin | "ftb">("all");
 const availableOn = ref<"all" | "unknown" | ModProvider>("all");
 const status = ref("all");
 const sourceOptions = [
   { label: "All sources", value: "all" },
   { label: "Modrinth", value: "modrinth" },
   { label: "CurseForge", value: "curseforge" },
+  { label: "FTB modpack", value: "ftb" },
   { label: "Manual upload", value: "manual" },
   { label: "Unknown", value: "unknown" },
 ];
@@ -349,28 +369,42 @@ const availabilityOptions = [
 ];
 const statusOptions = [
   { label: "All statuses", value: "all" },
+  { label: "Modpack files", value: "modpack" },
+  { label: "Custom additions", value: "custom" },
   { label: "Update available", value: "updates" },
   { label: "Auto-install", value: "managed" },
   { label: "Dependencies", value: "dependencies" },
 ];
+function rowMenuItems(mod: InstalledMod): DropdownMenuItem[][] {
+  const listings: DropdownMenuItem[] = mod.identities.map((identity) => ({
+    label: modSourceLabel(identity.provider),
+    slot: identity.provider,
+    to: identity.websiteUrl,
+    external: true,
+    target: "_blank",
+    rel: "noopener noreferrer",
+  }));
+  return [
+    props.menuItems(mod),
+    [
+      { type: "label", label: "Available on" },
+      ...(listings.length
+        ? listings
+        : [{ label: "Not identified", disabled: true }]),
+    ],
+  ];
+}
 function dependencyDescription(mod: InstalledMod) {
   return mod.requiredBy.length
     ? `Dependency. Required by: ${mod.requiredBy.map((parent) => parent.name).join(", ")}`
     : "Dependency. No installed mods currently require this dependency.";
 }
-type SortKey =
-  | "name"
-  | "version"
-  | "modifiedAt"
-  | "source"
-  | "availableOn"
-  | "size";
+type SortKey = "name" | "version" | "modifiedAt" | "source" | "size";
 const columns: { key: SortKey; label: string }[] = [
   { key: "name", label: "Name" },
   { key: "version", label: "Version" },
-  { key: "modifiedAt", label: "Last modified" },
-  { key: "source", label: "Mod source" },
-  { key: "availableOn", label: "Available on" },
+  { key: "modifiedAt", label: "Modified" },
+  { key: "source", label: "Source" },
   { key: "size", label: "Size" },
 ];
 const sortKey = ref<SortKey>("name");
@@ -395,9 +429,7 @@ function sortValue(mod: ModRow): string | number {
     case "modifiedAt":
       return mod.modifiedAt ? Date.parse(mod.modifiedAt) : 0;
     case "source":
-      return modSourceLabel(mod.source);
-    case "availableOn":
-      return mod.identities.map((identity) => identity.provider).join(",");
+      return installedModSourceLabel(mod);
     case "size":
       return mod.size;
   }
@@ -407,11 +439,15 @@ const visible = computed<ModRow[]>(() =>
     .filter(
       (mod) =>
         status.value === "all" ||
-        (status.value === "managed"
-          ? mod.managed
-          : status.value === "dependencies"
-            ? mod.dependency
-            : Boolean(props.updates[mod.filename] && !mod.managed))
+        (status.value === "modpack"
+          ? Boolean(mod.packManaged)
+          : status.value === "custom"
+            ? !mod.packManaged
+            : status.value === "managed"
+              ? mod.managed
+              : status.value === "dependencies"
+                ? mod.dependency
+                : Boolean(props.updates[mod.filename] && !mod.managed))
     )
     .map((mod) => {
       const linkIdentity = installedModLinkIdentity(mod);

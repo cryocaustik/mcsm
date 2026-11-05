@@ -22,6 +22,20 @@
       </button>
     </div>
 
+    <UFormField
+      v-if="['AUTO_CURSEFORGE', 'MODRINTH', 'FTBA'].includes(form.type ?? '')"
+      label="Modpack updates"
+      description="Pinned resolves an exact version at creation. Follow latest can change the pack on every restart."
+    >
+      <USelect
+        v-model="form.MODPACK_UPDATE_MODE"
+        :items="[
+          { label: 'Pin a version (recommended)', value: 'pinned' },
+          { label: 'Follow latest on restart', value: 'latest' },
+        ]"
+        class="w-full"
+      />
+    </UFormField>
     <div v-if="choosenType?.customFields?.length" class="space-y-3">
       <h3 class="text-md font-bold">
         Settings for <span class="text-primary">{{ choosenType?.name }}</span>
@@ -152,7 +166,20 @@ const types: {
     value: "MODRINTH",
     description: "Modrinth modpack server.",
     icon: modrinth,
-    disabled: true,
+    customFields: [
+      {
+        name: "MODRINTH_MODPACK",
+        label: "Modpack slug, ID or project URL",
+        required: true,
+        type: "text",
+        placeholder: "cobblemon-fabric",
+      },
+      {
+        name: "MODRINTH_VERSION",
+        label: "Modpack version ID (optional)",
+        type: "text",
+      },
+    ],
   },
   {
     name: "Paper",

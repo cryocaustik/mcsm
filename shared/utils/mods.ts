@@ -41,6 +41,13 @@ export function modSourceLabel(source: ModOrigin): string {
   }[source];
 }
 
+/** Acquisition by a pack is separate from the artifact's provider identities. */
+export function installedModSourceLabel(mod: InstalledMod): string {
+  if (!mod.packManaged) return modSourceLabel(mod.source);
+  const platform = mod.packPlatform;
+  return `${platform === "ftb" ? "FTB" : modSourceLabel(platform ?? "unknown")} pack`;
+}
+
 /** Provider downloads link to their recorded source; uploads use a known listing. */
 export function installedModLinkIdentity(
   mod: InstalledMod
@@ -65,7 +72,7 @@ export function filterInstalledMods(
   mods: InstalledMod[],
   query: string,
   availableOn: "all" | "unknown" | ModProvider,
-  source: "all" | ModOrigin = "all"
+  source: "all" | ModOrigin | "ftb" = "all"
 ) {
   const term = query.trim().toLocaleLowerCase();
   return mods.filter((mod) => {
@@ -74,7 +81,11 @@ export function filterInstalledMods(
       (availableOn === "unknown"
         ? mod.identities.length === 0
         : mod.identities.some((identity) => identity.provider === availableOn));
-    const matchesSource = source === "all" || mod.source === source;
+    const matchesSource =
+      source === "all" ||
+      (mod.packManaged && mod.packPlatform
+        ? mod.packPlatform === source
+        : mod.source === source);
     const text = [
       mod.filename,
       ...mod.identities.flatMap((identity) => [

@@ -21,6 +21,7 @@ export const serverConfigSchema = v.object({
     "VANILLA",
     "FTBA",
     "AUTO_CURSEFORGE",
+    "MODRINTH",
     "PAPER",
     "FABRIC",
     "FORGE",
@@ -57,6 +58,9 @@ export const serverConfigSchema = v.object({
   CF_SLUG: v.nullable(v.string()),
   CF_API_KEY: v.nullable(v.string()),
   CF_FILE_ID: v.nullable(v.string()),
+  MODRINTH_MODPACK: v.optional(v.nullable(v.string())),
+  MODRINTH_VERSION: v.optional(v.nullable(v.string())),
+  MODPACK_UPDATE_MODE: v.optional(v.picklist(["pinned", "latest"])),
 
   // --- Gameplay --------------------------------------------------------------
   MODE: v.optional(

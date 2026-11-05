@@ -1,3 +1,4 @@
+import { resolvePackConfiguration } from "./modpacks/catalog";
 import type { H3Event } from "h3";
 import type { ServerConfig } from "../schema/server.schema";
 import type { ActivityAction } from "./activity";
@@ -8,7 +9,7 @@ import {
   VOICE_CHAT_SLUG,
   voiceChatConfigPath,
   VoicePortConflictError,
-} from "#shared/utils/voiceChat";
+} from "../../shared/utils/voiceChat";
 
 export const MC_PORT = 25565;
 
@@ -51,6 +52,7 @@ export async function buildServerSpec(
     newWorld?: boolean;
   } = {}
 ) {
+  data = await resolvePackConfiguration(data);
   const config = useRuntimeConfig(event);
   const secrets = await useSecrets().getAll();
   const subdomain = sanitize(data.subdomain ?? data.name);
@@ -93,6 +95,14 @@ export async function buildServerSpec(
   const cfApiKey = secrets.CURSEFORGE_API_KEY || data.CF_API_KEY;
   if (cfApiKey) env.CF_API_KEY = cfApiKey;
   if (data.CF_FILE_ID) env.CF_FILE_ID = data.CF_FILE_ID;
+  if (data.MODRINTH_MODPACK) env.MODRINTH_MODPACK = data.MODRINTH_MODPACK;
+  if (data.MODPACK_UPDATE_MODE === "latest") {
+    delete env.CF_FILE_ID;
+    delete env.FTB_MODPACK_VERSION_ID;
+    delete env.MODRINTH_VERSION;
+    delete env.MODRINTH_VERSION_ID;
+  } else if (data.MODRINTH_VERSION)
+    env.MODRINTH_VERSION = data.MODRINTH_VERSION;
   if (options.newWorld) {
     // Names, not UUIDs: given a bare UUID itzg writes the entry with an empty
     // name, which the Players tab couldn't display. SKIP guards against a

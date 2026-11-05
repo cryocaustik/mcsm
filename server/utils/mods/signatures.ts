@@ -1,10 +1,15 @@
-import { createHash } from "node:crypto";
 import { listJars, readJar, type JarInfo } from "../minecraft/jars";
-import { curseforgeFingerprint } from "./fingerprint";
 import type { ModFileSignature } from "./types";
 
+import {
+  jarRevision,
+  jarSignature,
+  readSignatureCache,
+  writeSignatureCache,
+  type StoredSignature,
+} from "./signature-cache";
+
 const MAX_BYTES = 100 * 1024 * 1024;
-const MAX_AGE = 5 * 60_000;
 type SignatureEntry = {
   revision: string;
   at: number;
@@ -31,6 +36,7 @@ export async function scanModSignatures(
     if (cache.size >= 64) cache.delete(cache.keys().next().value!);
     cache.set(key, entries);
   }
+  const persisted = await readSignatureCache(key);
   const current = new Set(files.map((file) => file.name));
   for (const name of entries.keys())
     if (!current.has(name)) entries.delete(name);
@@ -42,15 +48,25 @@ export async function scanModSignatures(
     Array.from({ length: Math.min(4, queue.length) }, async () => {
       while (cursor < queue.length) {
         const file = queue[cursor++]!;
-        const revision = `${file.size}:${file.revision ?? file.modifiedAt}`;
+        const revision = jarRevision(file);
         let entry = entries.get(file.name);
+        if (
+          !options.fresh &&
+          file.revision &&
+          persisted[file.name]?.revision === revision &&
+          (!entry || entry.revision !== revision)
+        ) {
+          entry = {
+            revision,
+            at: Date.now(),
+            pending: Promise.resolve(persisted[file.name]!.signature),
+          };
+          entries.set(file.name, entry);
+        }
         if (
           !entry ||
           entry.revision !== revision ||
-          (entry.at &&
-            (options.fresh ||
-              !file.revision ||
-              Date.now() - entry.at > MAX_AGE))
+          (entry.at && (options.fresh || !file.revision))
         ) {
           const next: SignatureEntry = {
             revision,
@@ -61,11 +77,7 @@ export async function scanModSignatures(
                   throw new Error(
                     "Installed jar changed during identification; refresh to retry"
                   );
-                const signature = {
-                  filename: file.name,
-                  sha1: createHash("sha1").update(data).digest("hex"),
-                  fingerprint: curseforgeFingerprint(data),
-                };
+                const signature = jarSignature(file.name, data);
                 next.at = Date.now();
                 return signature;
               })
@@ -81,5 +93,25 @@ export async function scanModSignatures(
       }
     })
   );
+  const stored: Record<string, StoredSignature> = Object.create(null);
+  const byName = new Map(files.map((file) => [file.name, file]));
+  for (const signature of results) {
+    const file = byName.get(signature.filename)!;
+    if (file.revision)
+      stored[file.name] = { revision: jarRevision(file), signature };
+  }
+  if (
+    Object.keys(stored).length !== Object.keys(persisted).length ||
+    Object.entries(stored).some(([name, entry]) => {
+      const saved = persisted[name];
+      return (
+        !saved ||
+        saved.revision !== entry.revision ||
+        saved.signature.sha1 !== entry.signature.sha1 ||
+        saved.signature.fingerprint !== entry.signature.fingerprint
+      );
+    })
+  )
+    await writeSignatureCache(key, stored);
   return results.sort((a, b) => a.filename.localeCompare(b.filename));
 }

@@ -51,11 +51,15 @@ export type InstalledMod = {
   /** A file may be published on both providers; these are verified identities. */
   identities: ModIdentity[];
   managed: boolean;
+  packManaged?: boolean;
+  packPlatform?: import("./modpacks").ModpackPlatform;
 };
 
 export type ModInventory = {
   mods: InstalledMod[];
   warnings: string[];
+  /** Cached identities are visible while optional provider lookups finish. */
+  refreshing?: boolean;
   providers: { id: ModProvider; available: boolean; reason?: string }[];
 };
 

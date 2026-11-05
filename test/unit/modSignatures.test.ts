@@ -99,13 +99,13 @@ describe("incremental installed file signatures", () => {
     });
     expect(maximum).toBe(4);
   });
-  it("explicit refresh and periodic verification recompute unchanged signatures", async () => {
+  it("rehashes unchanged revisions only on explicit refresh, not when time passes", async () => {
     vi.useFakeTimers();
     await scanModSignatures("server", "mods");
     await scanModSignatures("server", "mods", { fresh: true });
-    vi.advanceTimersByTime(5 * 60_000 + 1);
+    vi.advanceTimersByTime(24 * 60 * 60_000);
     await scanModSignatures("server", "mods");
-    expect(mocks.read).toHaveBeenCalledTimes(3);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
   });
   it("does not cache failed reads or files that changed size during a scan", async () => {
     mocks.read.mockRejectedValueOnce(new Error("read failed"));

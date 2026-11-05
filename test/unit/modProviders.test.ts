@@ -47,6 +47,21 @@ const cfFile: CurseForgeFile = {
 
 describe("CurseForge source", () => {
   const source = createCurseforgeSource("test-key");
+  it("retrieves project presentation metadata in a batch for install-time persistence", async () => {
+    fetch.mockResolvedValue({ data: [cfProject] });
+    expect(await source.getProjects!(["123"])).toEqual([
+      expect.objectContaining({
+        provider: "curseforge",
+        projectId: "123",
+        name: "Example",
+        websiteUrl: "https://www.curseforge.com/minecraft/mc-mods/example",
+      }),
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.curseforge.com/v1/mods",
+      expect.objectContaining({ method: "POST", body: { modIds: [123] } })
+    );
+  });
   it("uses the Minecraft mods class, loader, version, pagination and provider sorting", async () => {
     fetch.mockResolvedValue({
       data: [cfProject],
@@ -135,6 +150,24 @@ describe("CurseForge source", () => {
 });
 
 describe("Modrinth source", () => {
+  it("retrieves project presentation metadata for install-time persistence", async () => {
+    fetch.mockResolvedValue([
+      {
+        id: "a",
+        slug: "example",
+        title: "Example",
+        icon_url: "https://example.com/icon.png",
+        project_type: "plugin",
+      },
+    ]);
+    expect(await modrinthSource.getProjects!(["a"])).toEqual([
+      expect.objectContaining({
+        name: "Example",
+        iconUrl: "https://example.com/icon.png",
+        websiteUrl: "https://modrinth.com/plugin/example",
+      }),
+    ]);
+  });
   const mrVersion = {
     id: "version1",
     project_id: "project1",

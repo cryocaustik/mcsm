@@ -116,6 +116,9 @@ export default defineEventHandler(async (event) => {
     FTB_MODPACK_VERSION_ID: null,
     CF_SLUG: null,
     CF_FILE_ID: null,
+    MODRINTH_MODPACK: null,
+    MODRINTH_VERSION: null,
+    MODPACK_UPDATE_MODE: undefined,
     SPIGET_RESOURCES: type === "PAPER" ? server.config.SPIGET_RESOURCES : null,
     MODRINTH_PROJECTS: serverTypeSupportsJars(type)
       ? server.config.MODRINTH_PROJECTS

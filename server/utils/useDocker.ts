@@ -122,6 +122,8 @@ function parseConfig(labels: Record<string, string> = {}): ServerConfig | null {
 }
 
 export type ProvisionOptions = {
+  /** Recovery may need a stopped container so its volume can be restored first. */
+  start?: boolean;
   /** Container name, e.g. `mc-my-server`. Must be unique on the host. */
   name: string;
   image: string;
@@ -342,7 +344,7 @@ export const useDocker = (event?: H3Event, hostId = "default") => {
     if (voice && source)
       await writeVoiceChatPort(source, voice, await containerOwner(container));
 
-    await container.start();
+    if (options.start !== false) await container.start();
 
     return { id: options.name, containerId: container.id, name: options.name };
   }

@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const resolvedLoader = await resolveServerLoader(server, loader);
-  const gameVersion = await serverGameVersion(server.config);
+  const gameVersion = await serverGameVersion(server.config, server.id);
 
   const { hits, total } = await searchProjects({
     query,

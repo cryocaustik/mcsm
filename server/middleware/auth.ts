@@ -1,3 +1,4 @@
+import { findPackOperation } from "../utils/modpacks/state";
 import type { H3Event } from "h3";
 import type { UserRow } from "../utils/auth";
 
@@ -100,7 +101,14 @@ async function authorize(
   try {
     volume = (await useDocker(event).getServer(decodeURIComponent(id!))).volume;
   } catch {
-    throw createError({ statusCode: 404, statusMessage: "Server not found" });
+    // A failed recreation may leave only the volume and recovery record.
+    const recovery =
+      subpath === "modpack"
+        ? await findPackOperation(decodeURIComponent(id!))
+        : null;
+    if (!recovery)
+      throw createError({ statusCode: 404, statusMessage: "Server not found" });
+    volume = recovery.volume;
   }
   event.context.serverAccess = await assertServerAccess(
     user,

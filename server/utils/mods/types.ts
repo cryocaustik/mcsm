@@ -31,6 +31,7 @@ export type ModProjectReference = {
 };
 
 export type ModInstallMetadata = {
+  identity?: ModIdentity;
   project?: ModProjectReference;
   dependencies?: ModProjectReference[];
   dependency?: boolean;
@@ -61,5 +62,6 @@ export interface ModSource {
     gameVersion: string,
     versionId?: string | null
   ): Promise<ModVersion | null>;
+  getProjects?(ids: string[]): Promise<ModProject[]>;
   identify(files: ModFileSignature[]): Promise<Record<string, ModIdentity>>;
 }

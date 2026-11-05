@@ -1,3 +1,4 @@
+import { assertPackFilesMutable } from "../../../../utils/modpacks/guard";
 import * as v from "valibot";
 
 /**
@@ -88,6 +89,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  await assertPackFilesMutable(
+    id,
+    server,
+    jars.map((jar) => jar.name)
+  );
   try {
     await writeJars(id, dir, jars, "manual");
   } catch (error) {

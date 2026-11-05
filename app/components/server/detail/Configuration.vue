@@ -54,27 +54,18 @@
           />
         </UFormField>
 
-        <template v-if="form.type === 'FTBA'">
-          <UFormField label="Modpack ID" name="FTB_MODPACK_ID" required>
-            <UInput v-model="ftbModpackId" class="w-full max-w-xs" />
-          </UFormField>
-          <UFormField label="Modpack Version ID" name="FTB_MODPACK_VERSION_ID">
-            <UInput v-model="ftbModpackVersionId" class="w-full max-w-xs" />
-          </UFormField>
-        </template>
-
-        <template v-if="form.type === 'AUTO_CURSEFORGE'">
-          <UFormField label="Modpack Slug" name="CF_SLUG" required>
-            <UInput
-              v-model="cfSlug"
-              placeholder="all-the-mods-8"
-              class="w-full max-w-xs"
-            />
-          </UFormField>
-          <UFormField label="File ID" name="CF_FILE_ID">
-            <UInput v-model="cfFileId" class="w-full max-w-xs" />
-          </UFormField>
-        </template>
+        <div v-if="packPlatform(form)" class="space-y-2">
+          <p class="text-sm text-muted">
+            The modpack controls Minecraft and loader versions.
+          </p>
+          <UButton
+            :to="`/server/${id}/mods`"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            >Manage modpack versions</UButton
+          >
+        </div>
 
         <div class="grid sm:grid-cols-2 gap-4">
           <UFormField label="Game Mode" name="MODE">
@@ -540,6 +531,7 @@
 </template>
 
 <script setup lang="ts">
+import { packMode, packPlatform } from "#shared/utils/modpacks";
 import MotdEditor from "~/components/server/motd/MotdEditor.vue";
 
 const { id, server, ping, refresh: refreshServer } = useServerDetail();
@@ -559,7 +551,11 @@ function resetForm() {
   // Deep copy so edits never leak into the shared server state, merged over
   // defaults so configs created by older versions have all fields.
   form.value = JSON.parse(
-    JSON.stringify({ ...defaultCreateForm(), ...config })
+    JSON.stringify({
+      ...defaultCreateForm(),
+      ...config,
+      MODPACK_UPDATE_MODE: packMode(config),
+    })
   );
   original.value = JSON.stringify(form.value);
 }
@@ -707,10 +703,6 @@ function nullableField(key: NullableKey) {
   });
 }
 
-const ftbModpackId = nullableField("FTB_MODPACK_ID");
-const ftbModpackVersionId = nullableField("FTB_MODPACK_VERSION_ID");
-const cfSlug = nullableField("CF_SLUG");
-const cfFileId = nullableField("CF_FILE_ID");
 const seed = nullableField("SEED");
 const icon = nullableField("ICON");
 const timezone = nullableField("TZ");
@@ -730,10 +722,12 @@ const customProperties = nullableField("CUSTOM_SERVER_PROPERTIES");
 
 // Modpack types pin their own Minecraft version, so only the plain server
 // types get a version picker. itzg honours VERSION for all of these.
-const supportsVersion = computed(() =>
-  ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE"].includes(
-    form.value?.type ?? ""
-  )
+const supportsVersion = computed(
+  () =>
+    !packPlatform(form.value) &&
+    ["VANILLA", "PAPER", "FABRIC", "FORGE", "NEOFORGE"].includes(
+      form.value?.type ?? ""
+    )
 );
 
 const version = computed({

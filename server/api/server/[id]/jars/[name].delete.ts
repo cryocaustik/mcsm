@@ -1,3 +1,4 @@
+import { assertPackFilesMutable } from "../../../../utils/modpacks/guard";
 import * as v from "valibot";
 
 /** Delete a single mod/plugin jar. With ?restart=true, restarts a running server. */
@@ -44,6 +45,7 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  await assertPackFilesMutable(id, server, [name]);
   try {
     await deleteJar(id, dir, name);
   } catch (error) {

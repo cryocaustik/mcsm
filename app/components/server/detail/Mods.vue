@@ -1,27 +1,14 @@
 <template>
   <div class="space-y-6">
-    <!-- Unsupported server type -->
+    <ServerDetailModpack
+      v-if="isModpack"
+      @changed="onModpackChanged"
+      @installed="packState = $event"
+    />
     <UCard v-if="!supported">
-      <div class="text-sm text-muted py-10 text-center space-y-2">
-        <UIcon
-          name="i-heroicons-puzzle-piece"
-          class="size-8 mx-auto opacity-60"
-        />
-        <p class="font-medium text-highlighted">
-          {{
-            server?.config?.type === "FTBA"
-              ? "FTB modpacks manage their own mods"
-              : "This server type can't load mods or plugins"
-          }}
-        </p>
-        <p class="max-w-md mx-auto">
-          {{
-            server?.config?.type === "FTBA"
-              ? "The Feed The Beast installer owns the mods folder and re-syncs it on every start — manually added files would be removed again."
-              : "Vanilla servers have no plugin or mod loader. Use a Paper, Fabric, Forge, NeoForge or CurseForge modpack server to install plugins or mods."
-          }}
-        </p>
-      </div>
+      <p class="py-10 text-center text-sm text-muted">
+        This server type cannot load mods or plugins.
+      </p>
     </UCard>
 
     <template v-else>
@@ -38,14 +25,14 @@
             </div>
             <div class="flex flex-wrap items-center gap-3">
               <UButton
-                v-if="selectedJars.length"
+                v-if="deletableJars.length"
                 icon="i-heroicons-trash-20-solid"
                 color="error"
                 variant="soft"
                 size="sm"
                 @click="batchDeleteOpen = true"
               >
-                Delete {{ selectedJars.length }}
+                Delete {{ deletableJars.length }}
               </UButton>
               <UButton
                 v-if="updatableJars.length"
@@ -177,6 +164,8 @@
             :mods="installedMods"
             :updates="updatesByFilename"
             :menu-items="modMenuItems"
+            :updating="updating"
+            @update-mod="runUpdate([$event])"
           />
 
           <!-- Integration jars hint -->
@@ -217,11 +206,11 @@
     <UModal
       v-model:open="batchDeleteOpen"
       title="Delete selected jars"
-      :description="`Delete ${selectedJars.length} ${selectedJars.length === 1 ? 'jar' : 'jars'}? ${restartAfter && server?.running ? 'The server restarts once afterwards.' : 'The change applies on the next restart.'}`"
+      :description="`Delete ${deletableJars.length} ${deletableJars.length === 1 ? 'jar' : 'jars'}? Pack-owned files will be kept. ${restartAfter && server?.running ? 'The server restarts once afterwards.' : 'The change applies on the next restart.'}`"
     >
       <template #body>
         <ul class="text-sm font-mono text-muted space-y-1">
-          <li v-for="name in selectedJars" :key="name">{{ name }}</li>
+          <li v-for="name in deletableJars" :key="name">{{ name }}</li>
         </ul>
       </template>
       <template #footer>
@@ -235,7 +224,7 @@
             Cancel
           </UButton>
           <UButton color="error" :loading="deleting" @click="runBatchDelete">
-            Delete {{ selectedJars.length }}
+            Delete {{ deletableJars.length }}
           </UButton>
         </div>
       </template>
@@ -265,6 +254,8 @@
 
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
+import { packPlatform } from "#shared/utils/modpacks";
+import type { InstalledPack } from "#shared/types/modpacks";
 import type { InstalledMod, ModInventory } from "#shared/types/mods";
 import { installedModKeys } from "#shared/utils/mods";
 import { errorMessage } from "~/utils/errors";
@@ -276,7 +267,20 @@ const toast = useToast();
 
 // --- Type gating ----------------------------------------------------------------
 
-const SUPPORTED = ["PAPER", "FABRIC", "FORGE", "NEOFORGE", "AUTO_CURSEFORGE"];
+const SUPPORTED = [
+  "PAPER",
+  "FABRIC",
+  "FORGE",
+  "NEOFORGE",
+  "AUTO_CURSEFORGE",
+  "MODRINTH",
+  "FTBA",
+];
+const isModpack = computed(() => Boolean(packPlatform(server.value?.config)));
+async function onModpackChanged() {
+  await refreshServer();
+  await refreshModData();
+}
 const supported = computed(() =>
   SUPPORTED.includes(server.value?.config?.type ?? "")
 );
@@ -287,14 +291,16 @@ const kindLabel = computed(() =>
 const integrationHint = computed(() => {
   const base =
     "Jars installed by integrations (BlueMap, Chunky) are managed through MODRINTH_PROJECTS and re-download on the next start if deleted here.";
-  return server.value?.config?.type === "AUTO_CURSEFORGE"
-    ? `${base} Mods that belong to the CurseForge modpack also re-sync on the next start.`
+  return isModpack.value
+    ? `${base} Pack-owned files are managed by the modpack version. Custom additions can be managed independently.`
     : base;
 });
 
 // --- Data -----------------------------------------------------------------------
 
 const forceModRefresh = ref(false);
+const packState = ref<InstalledPack | null>(null);
+const packOwnedFiles = computed(() => new Set(packState.value?.files ?? []));
 
 const {
   data: jars,
@@ -321,6 +327,30 @@ const {
   retry: false,
   default: () => ({ mods: [], warnings: [], providers: [] }),
 });
+
+// Pick up background provider results without forcing another signature scan.
+const { pause: pauseInventoryPolling, resume: resumeInventoryPolling } =
+  useIntervalFn(
+    () => {
+      if (inventoryStatus.value !== "pending" && !forceModRefresh.value) {
+        void refreshInventory({ dedupe: "defer" });
+      }
+    },
+    2000,
+    { immediate: false }
+  );
+watch(
+  [
+    () => Boolean(inventory.value?.refreshing),
+    inventoryStatus,
+    forceModRefresh,
+  ],
+  ([refreshing, status, forced]) =>
+    refreshing && status === "success" && !forced
+      ? resumeInventoryPolling()
+      : pauseInventoryPolling(),
+  { immediate: true }
+);
 const installedMods = computed<InstalledMod[]>(() => {
   const identified = new Map(
     (inventory.value?.mods ?? []).map((mod) => [mod.filename, mod])
@@ -335,7 +365,15 @@ const installedMods = computed<InstalledMod[]>(() => {
       dependency: mod?.dependency ?? false,
       requiredBy: mod?.requiredBy ?? [],
       identities: mod?.identities ?? [],
-      managed: Boolean(mod?.managed || projectInfoFor(jar.name)?.managed),
+      packManaged: Boolean(
+        mod?.packManaged || packOwnedFiles.value.has(`mods/${jar.name}`)
+      ),
+      packPlatform: mod?.packPlatform ?? packState.value?.platform,
+      managed: Boolean(
+        mod?.managed ||
+        projectInfoFor(jar.name)?.managed ||
+        packOwnedFiles.value.has(`mods/${jar.name}`)
+      ),
     };
   });
 });
@@ -343,6 +381,12 @@ const installedProjectKeys = computed(() =>
   installedModKeys(installedMods.value)
 );
 const selectedJars = ref<string[]>([]);
+const deletableJars = computed(() =>
+  selectedJars.value.filter(
+    (name) =>
+      !installedMods.value.find((mod) => mod.filename === name)?.packManaged
+  )
+);
 const modListOpen = ref(false);
 const modListMode = ref<"export" | "import">("export");
 const modListActions: DropdownMenuItem[] = [
@@ -560,6 +604,10 @@ function jarMenuItems(jar: JarInfo): DropdownMenuItem[] {
     },
     {
       label: "Delete",
+      disabled: Boolean(
+        installedMods.value.find((mod) => mod.filename === jar.name)
+          ?.packManaged
+      ),
       icon: "i-heroicons-trash-20-solid",
       color: "error",
       onSelect: () => {
@@ -602,18 +650,19 @@ async function runDelete() {
 }
 
 async function runBatchDelete() {
-  if (!selectedJars.value.length) return;
+  if (!deletableJars.value.length) return;
+  const names = [...deletableJars.value];
   deleting.value = true;
   try {
     // Delete without restarting, then restart once at the end if requested.
-    for (const name of selectedJars.value) {
+    for (const name of names) {
       await deleteOne(name, false);
     }
     if (restartAfter.value && server.value?.running) {
       await $fetch(`/api/server/${id.value}/restart`, { method: "POST" });
     }
     toast.add({
-      title: `${selectedJars.value.length} jars deleted`,
+      title: `${names.length} jars deleted`,
       color: "success",
     });
     batchDeleteOpen.value = false;

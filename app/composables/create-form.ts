@@ -1,3 +1,4 @@
+import { packMode } from "../../shared/utils/modpacks";
 export type VersionOption = { label: string; value: string | number };
 
 export type CreateForm = {
@@ -23,6 +24,9 @@ export type CreateForm = {
   CF_SLUG: string | null;
   CF_API_KEY: string | null;
   CF_FILE_ID: string | null;
+  MODRINTH_MODPACK: string | null;
+  MODRINTH_VERSION: string | null;
+  MODPACK_UPDATE_MODE: "pinned" | "latest";
 
   // Gameplay
   MODE: "survival" | "creative" | "adventure" | "spectator";
@@ -103,6 +107,9 @@ export const defaultCreateForm = (): CreateForm => ({
   CF_SLUG: null,
   CF_API_KEY: null,
   CF_FILE_ID: null,
+  MODRINTH_MODPACK: null,
+  MODRINTH_VERSION: null,
+  MODPACK_UPDATE_MODE: "pinned",
 
   // Gameplay
   MODE: "survival",
@@ -157,6 +164,7 @@ export const useCreateForm = () => {
 export const setCreateForm = (initial?: Partial<CreateForm> | null) => {
   const form = useCreateForm();
   form.value = { ...defaultCreateForm(), ...initial };
+  if (initial) form.value.MODPACK_UPDATE_MODE = packMode(initial);
 };
 
 /** Form keys holding an optional string, where null means "unset". */

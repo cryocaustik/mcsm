@@ -9,6 +9,7 @@ import type {
   ModProjectReference,
 } from "./types";
 import type { JarFile } from "../minecraft/jars";
+import { validModIdentity } from "./cache";
 
 const installing = new Set<string>();
 
@@ -320,4 +321,54 @@ export async function downloadModPlan(
     hashes.add(version.sha1.toLowerCase());
   }
   return { jars, added };
+}
+
+/** Save project presentation data while the installer already knows the exact version. */
+export async function populateInstallIdentities(
+  jars: JarFile[],
+  versions: Pick<
+    ModVersion,
+    "filename" | "projectId" | "version" | "versionId"
+  >[],
+  source: ModSource
+) {
+  if (!jars.length || !source.getProjects) return;
+  const byFilename = new Map(
+    versions.map((version) => [version.filename, version])
+  );
+  const ids = [
+    ...new Set(
+      jars.flatMap((jar) => {
+        if (jar.metadata?.identity) return [];
+        const version = byFilename.get(jar.name);
+        return version ? [version.projectId] : [];
+      })
+    ),
+  ];
+  if (!ids.length) return;
+  try {
+    const projects = new Map(
+      (await source.getProjects(ids)).map((project) => [
+        project.projectId,
+        project,
+      ])
+    );
+    for (const jar of jars) {
+      const version = byFilename.get(jar.name);
+      const project = version && projects.get(version.projectId);
+      if (version && project && project.provider === source.id) {
+        const identity = {
+          ...project,
+          version: version.version,
+          versionId: version.versionId,
+        };
+        if (validModIdentity(identity)) {
+          jar.metadata ??= {};
+          jar.metadata.identity = identity;
+        }
+      }
+    }
+  } catch {
+    // Presentation metadata is optional; discovery can fill it in after installation.
+  }
 }

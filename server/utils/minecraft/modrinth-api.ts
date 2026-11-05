@@ -1,3 +1,5 @@
+import { readInstalledPack } from "../modpacks/installed";
+import { packPlatform } from "../../../shared/utils/modpacks";
 import { createHash } from "node:crypto";
 import type { ServerConfig } from "../../schema/server.schema";
 
@@ -142,8 +144,19 @@ export function modrinthLoader(
  * version, or the latest release when the server runs "latest" (VERSION null).
  */
 export async function serverGameVersion(
-  config: ServerConfig | null | undefined
+  config: ServerConfig | null | undefined,
+  id?: string
 ): Promise<string> {
+  if (packPlatform(config)) {
+    const installed = id ? await readInstalledPack(id, config ?? null) : null;
+    if (!installed?.minecraft)
+      throw createError({
+        statusCode: 409,
+        statusMessage:
+          "The modpack's Minecraft version is not available yet. Wait for installation to finish.",
+      });
+    return installed.minecraft;
+  }
   if (config?.VERSION?.label) return config.VERSION.label;
   const releases = (await fetchMinecraftReleases()) ?? [];
   return releases[0] ?? "1.21.1";
@@ -163,6 +176,14 @@ export async function resolveServerLoader(
 ): Promise<string> {
   if (override) return override;
 
+  if (packPlatform(server.config)) {
+    const pack = await readInstalledPack(server.id, server.config);
+    if (
+      pack?.loader &&
+      ["forge", "neoforge", "fabric", "quilt"].includes(pack.loader)
+    )
+      return pack.loader;
+  }
   const fromType = modrinthLoader(server.config?.type);
   if (fromType) return fromType;
 

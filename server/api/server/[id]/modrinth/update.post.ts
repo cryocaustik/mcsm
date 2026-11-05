@@ -1,3 +1,6 @@
+import { assertPackFilesMutable } from "../../../../utils/modpacks/guard";
+import { populateInstallIdentities } from "../../../../utils/mods/install";
+import { modrinthSource } from "../../../../utils/mods/modrinth";
 import * as v from "valibot";
 import { modrinthUpdateMetadata } from "../../../../utils/mods/modrinth";
 import { readModOrigins } from "../../../../utils/mods/origins";
@@ -45,8 +48,9 @@ export default defineEventHandler(async (event) => {
     });
   }
 
+  await assertPackFilesMutable(id, server, filenames);
   const resolvedLoader = await resolveServerLoader(server, loader);
-  const gameVersion = await serverGameVersion(server.config);
+  const gameVersion = await serverGameVersion(server.config, server.id);
 
   // Re-hash and re-check right before updating — the cached updates response
   // may be stale.
@@ -87,9 +91,22 @@ export default defineEventHandler(async (event) => {
         origins[filename],
         sha1
       );
+      await populateInstallIdentities(
+        [jar],
+        [
+          {
+            filename: jar.name,
+            projectId: newest.project_id,
+            version: newest.version_number,
+            versionId: newest.id,
+          },
+        ],
+        modrinthSource
+      );
       // Write the new build first, then remove the old file — a failure
       // between the two leaves both versions (harmless duplicate) rather
       // than neither.
+      await assertPackFilesMutable(id, server, [jar.name]);
       await writeJars(id, dir, [jar], "modrinth");
       if (jar.name !== filename) {
         await deleteJar(id, dir, filename);

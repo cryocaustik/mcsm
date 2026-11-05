@@ -86,6 +86,7 @@ describe("metadata-only jar listing", () => {
       const putArchive = vi.fn(async (stream: NodeJS.ReadableStream) => {
         stream.resume();
         if (fail) throw new Error("write failed");
+        run.mockResolvedValue(listing("new.jar"));
       });
       vi.stubGlobal("useDocker", () => ({
         docker: { getContainer: () => ({ putArchive }) },

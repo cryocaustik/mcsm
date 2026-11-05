@@ -1,3 +1,5 @@
+import { assertPackSelectionUnchanged } from "../../../utils/modpacks/catalog";
+import { assertPackOperationIdle } from "../../../utils/modpacks/guard";
 import * as v from "valibot";
 import { serverConfigSchema } from "../../../schema/server.schema";
 
@@ -14,6 +16,9 @@ export default defineEventHandler(async (event) => {
   );
   const data = await readValidatedBody(event, v.parser(serverConfigSchema));
 
+  const existing = await useDocker(event).getServer(id);
+  assertPackSelectionUnchanged(existing.config, data);
+  await assertPackOperationIdle(existing);
   try {
     const result = await recreateServer(
       event,

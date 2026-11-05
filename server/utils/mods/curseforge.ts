@@ -206,6 +206,16 @@ export function createCurseforgeSource(
       );
       return file ? versionInfo(file) : null;
     },
+    async getProjects(ids) {
+      const projects: ModProject[] = [];
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const { data } = await request<{ data: CurseForgeProject[] }>("/mods", {
+          body: { modIds: ids.slice(offset, offset + 100).map(Number) },
+        });
+        projects.push(...data.map((project) => projectInfo(project, plugin)));
+      }
+      return projects;
+    },
     async identify(files) {
       const identities: Record<string, ModIdentity> = {};
       for (let offset = 0; offset < files.length; offset += 100) {

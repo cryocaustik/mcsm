@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
     server,
     server.config?.type === "AUTO_CURSEFORGE" ? loader : undefined
   );
-  const gameVersion = await serverGameVersion(server.config);
+  const gameVersion = await serverGameVersion(server.config, server.id);
   const result = await source.search({
     query: query.trim(),
     loader: resolvedLoader,

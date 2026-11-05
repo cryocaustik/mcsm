@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { extract } from "tar-stream";
 import type { ModOrigin } from "../../../shared/types/mods";
+import { validModIdentity } from "./cache";
 import type { ModInstallMetadata, ModProjectReference } from "./types";
 
 /** Travels with backups, restores and server copies; hidden from the file editor. */
@@ -60,6 +61,11 @@ function validProjectReference(value: unknown): value is ModProjectReference {
 
 function validInstallMetadata(record: Partial<ModOriginRecord>): boolean {
   return (
+    (record.identity === undefined ||
+      (validModIdentity(record.identity) &&
+        record.identity.provider === record.source &&
+        (!record.project ||
+          record.identity.projectId === record.project.projectId))) &&
     (record.project === undefined || validProjectReference(record.project)) &&
     (record.dependency === undefined ||
       typeof record.dependency === "boolean") &&

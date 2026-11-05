@@ -1,9 +1,15 @@
+import { assertPackFilesMutable } from "../modpacks/guard";
 import * as v from "valibot";
 import type { H3Event } from "h3";
 import { randomUUID } from "node:crypto";
 import type { ModInstallStage, ModProvider } from "../../../shared/types/mods";
 import { reportModInstallFailure } from "./errors";
-import { downloadModPlan, planModInstall, withModInstallLock } from "./install";
+import {
+  downloadModPlan,
+  planModInstall,
+  withModInstallLock,
+  populateInstallIdentities,
+} from "./install";
 import { getModInventory } from "./inventory";
 import { writeJarOrigin } from "../minecraft/jars";
 import type { ModInstallResult } from "../../../shared/types/mod-list";
@@ -75,7 +81,7 @@ export async function installServerMod(
         server,
         server.config?.type === "AUTO_CURSEFORGE" ? loader : undefined
       );
-      const gameVersion = await serverGameVersion(server.config);
+      const gameVersion = await serverGameVersion(server.config, server.id);
       const plan = await planModInstall(
         source,
         project,
@@ -93,6 +99,12 @@ export async function installServerMod(
         inventory.mods.map((mod) => mod.filename),
         { rootDependency: dependency }
       );
+      await assertPackFilesMutable(
+        id,
+        server,
+        jars.map((jar) => jar.name)
+      );
+      await populateInstallIdentities(jars, plan, source);
       stage = "write";
       if (jars.length) await writeJars(id, dir, jars, provider);
       const root = plan[0]!;
@@ -118,6 +130,7 @@ export async function installServerMod(
           filename: retained.filename,
           sha1,
           source: retained.source,
+          ...(valid?.identity ? { identity: valid.identity } : {}),
           project: valid?.project ?? {
             provider,
             projectId: retainedVersion.projectId,

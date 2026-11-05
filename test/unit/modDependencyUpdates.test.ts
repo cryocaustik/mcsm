@@ -5,7 +5,7 @@ import {
   type ModrinthVersion,
 } from "../../server/utils/minecraft/modrinth-api";
 import type { ModOriginRecord } from "../../server/utils/mods/origins";
-import { apiError } from "../fixtures/mods";
+import { apiError, identity } from "../fixtures/mods";
 
 vi.mock("../../server/utils/minecraft/modrinth-api", () => ({
   getModrinthVersion: vi.fn(),
@@ -45,6 +45,20 @@ const newest: ModrinthVersion = {
 };
 
 describe("dependency metadata during Modrinth updates", () => {
+  it("reuses known project presentation data while advancing the installed version", async () => {
+    const matched = identity("a");
+    const metadata = await modrinthUpdateMetadata(
+      newest,
+      { ...previous, identity: matched },
+      hash
+    );
+    expect(metadata.identity).toEqual({
+      ...matched,
+      version: newest.version_number,
+      versionId: newest.id,
+    });
+    expect(getModrinthVersion).not.toHaveBeenCalled();
+  });
   it("preserves automatic dependency history, refreshes required links and drops obsolete or optional edges", async () => {
     const metadata = await modrinthUpdateMetadata(newest, previous, hash);
     expect(metadata).toEqual({

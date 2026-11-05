@@ -55,6 +55,23 @@
         >
           {{ form.FTB_MODPACK_VERSION_ID }}
         </ReviewRow>
+        <ReviewRow
+          v-if="
+            ['AUTO_CURSEFORGE', 'FTBA', 'MODRINTH'].includes(form.type ?? '')
+          "
+          label="Modpack updates"
+          >{{
+            form.MODPACK_UPDATE_MODE === "latest"
+              ? "Follow latest on restart"
+              : "Pinned version"
+          }}</ReviewRow
+        >
+        <ReviewRow v-if="form.MODRINTH_MODPACK" label="Modrinth modpack">{{
+          form.MODRINTH_MODPACK
+        }}</ReviewRow>
+        <ReviewRow v-if="form.MODRINTH_VERSION" label="Modrinth version">{{
+          form.MODRINTH_VERSION
+        }}</ReviewRow>
         <ReviewRow v-if="form.CF_SLUG" label="CurseForge Slug">
           {{ form.CF_SLUG }}
         </ReviewRow>

@@ -7,8 +7,8 @@
  */
 
 /**
- * Server types that can load custom jars. VANILLA has no loader; FTBA's
- * installer owns its files (manual changes get clobbered on sync).
+ * Server types that can load jars. Pack-owned files are protected separately
+ * from custom additions by the modpack ownership guard.
  */
 export const JAR_SUPPORTED_TYPES = [
   "PAPER",
@@ -16,6 +16,8 @@ export const JAR_SUPPORTED_TYPES = [
   "FORGE",
   "NEOFORGE",
   "AUTO_CURSEFORGE",
+  "MODRINTH",
+  "FTBA",
 ] as const;
 
 export function serverTypeSupportsJars(type?: string | null): boolean {
@@ -98,10 +100,9 @@ export function configRoots(
 export const ROOT_CONFIG_EXTENSIONS = [".yml", ".yaml", ".toml"] as const;
 
 /**
- * Detect a CurseForge modpack's mod loader from markers the installer leaves
- * in the volume. The loader never changes for a modpack, so results are
- * cached per volume for the process lifetime. Returns null when the modpack
- * hasn't installed yet (first boot still running).
+ * Legacy fallback for packs without usable installer loader metadata. Cache
+ * per volume, invalidating after modpack changes and variant migrations.
+ * Returns null until loader artifacts exist.
  */
 const loaderCache = new Map<string, "fabric" | "forge" | "neoforge">();
 

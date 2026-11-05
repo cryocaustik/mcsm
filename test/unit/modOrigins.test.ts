@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { extract, pack } from "tar-stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { identity } from "../fixtures/mods";
 import {
   deleteJar,
   writeJars,
@@ -49,6 +50,54 @@ function archiveContents(
 }
 
 describe("persisted mod acquisition source", () => {
+  it("round trips the complete install-time identity alongside existing dependency records", async () => {
+    const matched = {
+      ...identity("123", "curseforge"),
+      iconUrl: "https://example.com/icon.png",
+    };
+    const file = modOriginFile(
+      "mods",
+      {
+        ...jar,
+        metadata: {
+          project: { provider: "curseforge", projectId: "123" },
+          identity: matched,
+          dependencies: [],
+        },
+      },
+      "curseforge"
+    );
+    vi.stubGlobal("useDocker", () => ({
+      docker: {
+        getContainer: () => ({ getArchive: async () => archive([file]) }),
+      },
+    }));
+    expect(
+      (await readModOrigins("server", "mods"))[jar.name]?.identity
+    ).toEqual(matched);
+  });
+  it.each([
+    { ...identity("a"), websiteUrl: "javascript:alert(1)" },
+    identity("a", "curseforge"),
+    { ...identity("a"), versionId: undefined },
+  ])(
+    "rejects invalid or mismatched saved presentation metadata",
+    async (matched) => {
+      const file = modOriginFile("mods", jar, "modrinth");
+      file.data = Buffer.from(
+        JSON.stringify({
+          ...JSON.parse(file.data.toString()),
+          identity: matched,
+        })
+      );
+      vi.stubGlobal("useDocker", () => ({
+        docker: {
+          getContainer: () => ({ getArchive: async () => archive([file]) }),
+        },
+      }));
+      expect(await readModOrigins("server", "mods")).toEqual({});
+    }
+  );
   it("persists checked dependencies for an existing untracked jar without rewriting it or inventing an origin", async () => {
     const record: ModOriginRecord = {
       version: 1,

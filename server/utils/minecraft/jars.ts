@@ -4,6 +4,7 @@ import type { ModOrigin } from "../../../shared/types/mods";
 import type { ModInstallMetadata } from "../mods/types";
 import { MOD_ORIGINS_DIR, modOriginFile, modOriginPath } from "../mods/origins";
 import type { ModOriginRecord } from "../mods/origins";
+import { rememberInstalledJars } from "../mods/signature-cache";
 
 /**
  * Mod/plugin jar management.
@@ -268,6 +269,11 @@ export async function writeJars(
     });
   } finally {
     invalidateJarList(id, dir);
+  }
+  try {
+    await rememberInstalledJars(id, dir, jars, await listJars(id, dir));
+  } catch {
+    // Discovery can fill the cache later if filesystem metadata is unavailable.
   }
 }
 
